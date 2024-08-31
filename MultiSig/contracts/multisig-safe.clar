@@ -22,8 +22,6 @@
     (begin
         (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
         (asserts! (is-none (index-of (var-get wallet-owners) new-owner)) ERR_OWNER_ALREADY_EXISTS)
-
-        ;; Update the list of owners
         (ok (var-set wallet-owners (append (var-get wallet-owners) (list new-owner))))
     )
 )
@@ -33,8 +31,6 @@
     (begin
         (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
         (asserts! (> transfer-amount u0) ERR_INVALID_TRANSFER_AMOUNT)
-
-        ;; Increment transaction counter and store the new transaction
         (let ((new-tx-id (+ (var-get transaction-id-counter) u1)))
             (map-set transaction-records new-tx-id
                 (tuple
@@ -99,11 +95,11 @@
 
 ;; Function to remove a wallet owner
 (define-public (remove-wallet-owner (owner-to-remove principal))
-    (begin
-        (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
-        (asserts! (is-some (index-of (var-get wallet-owners) owner-to-remove)) ERR_NOT_OWNER)
-        (let ((new-owners (filter (lambda (owner) (not (is-eq owner owner-to-remove))) (var-get wallet-owners))))
-            (ok (var-set wallet-owners new-owners))
-        )
+    (let ((is-authorized (is-authorized-owner tx-sender))
+          (owner-exists (is-some (index-of (var-get wallet-owners) owner-to-remove))))
+        (asserts! is-authorized ERR_NOT_AUTHORIZED)
+        (asserts! owner-exists ERR_NOT_OWNER)
+        (ok (var-set wallet-owners 
+            (filter (lambda (owner) (not (is-eq owner owner-to-remove))) (var-get wallet-owners))))
     )
 )
