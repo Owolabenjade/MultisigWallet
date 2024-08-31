@@ -3,9 +3,12 @@
 (define-constant ERR_ALREADY_APPROVED (err u102))
 (define-constant ERR_TRANSACTION_NOT_FOUND (err u103))
 (define-constant ERR_INVALID_TRANSFER_AMOUNT (err u104))
+(define-constant ERR_OWNER_ALREADY_EXISTS (err u105))
+(define-constant ERR_NOT_OWNER (err u106))
+(define-constant ERR_CANNOT_EXECUTE (err u107))
 
 (define-data-var wallet-owners (list 10 principal) (list))
-(define-data-var required-approvals u uint u2)
+(define-data-var required-approvals uint u2)
 (define-data-var transaction-records (map uint (tuple (transfer-amount uint) (recipient principal) (approvals (list 10 principal)) (is-executed bool))) (map))
 (define-data-var transaction-id-counter uint u0)
 
@@ -18,8 +21,10 @@
 (define-public (add-wallet-owner (new-owner principal))
     (begin
         (asserts! (is-authorized-owner (tx-sender)) ERR_NOT_AUTHORIZED)
-        (asserts! (not (contains? (var-get wallet-owners) new-owner)) ERR_NOT_AUTHORIZED)
-        (map-set wallet-owners new-owner)
+        (asserts! (not (contains? (var-get wallet-owners) new-owner)) ERR_OWNER_ALREADY_EXISTS)
+
+        ;; Update the list of owners
+        (var-set wallet-owners (append (var-get wallet-owners) (list new-owner)))
         (ok new-owner)
     )
 )
@@ -30,6 +35,7 @@
         (asserts! (is-authorized-owner (tx-sender)) ERR_NOT_AUTHORIZED)
         (asserts! (> transfer-amount u0) ERR_INVALID_TRANSFER_AMOUNT)
 
+        ;; Increment transaction counter and store the new transaction
         (let ((new-tx-id (+ (var-get transaction-id-counter) u1)))
             (map-set transaction-records new-tx-id
                 (tuple
@@ -52,8 +58,12 @@
             tx-none (err ERR_TRANSACTION_NOT_FOUND)
             tx-some (begin
                 (asserts! (is-authorized-owner (tx-sender)) ERR_NOT_AUTHORIZED)
+
+                ;; Check if the transaction is already approved by the caller
                 (let ((approvals (get approvals tx)))
                     (asserts! (not (contains? approvals (tx-sender))) ERR_ALREADY_APPROVED)
+
+                    ;; Append the approval and update the transaction record
                     (let ((new-approvals (append approvals (list (tx-sender)))))
                         (map-set transaction-records tx-id
                             (tuple
@@ -77,10 +87,14 @@
         (match tx
             tx-none (err ERR_TRANSACTION_NOT_FOUND)
             tx-some (begin
+                ;; Ensure the caller is an authorized owner
                 (asserts! (is-authorized-owner (tx-sender)) ERR_NOT_AUTHORIZED)
-                (asserts! (>= (len (get approvals tx)) (var-get required-approvals)) ERR_INSUFFICIENT_APPROVALS)
-                (asserts! (not (get is-executed tx)) ERR_NOT_AUTHORIZED)
 
+                ;; Ensure the transaction has enough approvals and is not already executed
+                (asserts! (>= (len (get approvals tx)) (var-get required-approvals)) ERR_INSUFFICIENT_APPROVALS)
+                (asserts! (not (get is-executed tx)) ERR_CANNOT_EXECUTE)
+
+                ;; Execute the transaction
                 (let ((transfer-amount (get transfer-amount tx))
                       (recipient (get recipient tx)))
                     (map-set transaction-records tx-id
@@ -91,9 +105,24 @@
                             (is-executed true)
                         )
                     )
-                    (transfer-stx transfer-amount tx-sender recipient)
+                    (try! (transfer-stx transfer-amount tx-sender recipient))
+                    (ok true)
                 )
             )
+        )
+    )
+)
+
+;; Function to remove a wallet owner
+(define-public (remove-wallet-owner (owner-to-remove principal))
+    (begin
+        (asserts! (is-authorized-owner (tx-sender)) ERR_NOT_AUTHORIZED)
+        (asserts! (contains? (var-get wallet-owners) owner-to-remove) ERR_NOT_OWNER)
+
+        ;; Remove the owner
+        (let ((new-owners (filter (lambda (owner) (not (is-eq owner owner-to-remove))) (var-get wallet-owners))))
+            (var-set wallet-owners new-owners)
+            (ok owner-to-remove)
         )
     )
 )
