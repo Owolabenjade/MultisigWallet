@@ -14,14 +14,14 @@
 
 ;; Helper function to check if a wallet owner is authorized
 (define-read-only (is-authorized-owner (user principal))
-    (ok (contains? (var-get wallet-owners) user))
+    (ok (is-in-list? user (var-get wallet-owners)))
 )
 
 ;; Function to add owners to the wallet
 (define-public (add-wallet-owner (new-owner principal))
     (begin
         (asserts! (is-authorized-owner (tx-sender)) ERR_NOT_AUTHORIZED)
-        (asserts! (not (contains? (var-get wallet-owners) new-owner)) ERR_OWNER_ALREADY_EXISTS)
+        (asserts! (not (is-in-list? new-owner (var-get wallet-owners))) ERR_OWNER_ALREADY_EXISTS)
 
         ;; Update the list of owners
         (var-set wallet-owners (append (var-get wallet-owners) (list new-owner)))
@@ -61,7 +61,7 @@
 
                 ;; Check if the transaction is already approved by the caller
                 (let ((approvals (get approvals tx)))
-                    (asserts! (not (contains? approvals (tx-sender))) ERR_ALREADY_APPROVED)
+                    (asserts! (not (is-in-list? (tx-sender) approvals)) ERR_ALREADY_APPROVED)
 
                     ;; Append the approval and update the transaction record
                     (let ((new-approvals (append approvals (list (tx-sender)))))
@@ -117,7 +117,7 @@
 (define-public (remove-wallet-owner (owner-to-remove principal))
     (begin
         (asserts! (is-authorized-owner (tx-sender)) ERR_NOT_AUTHORIZED)
-        (asserts! (contains? (var-get wallet-owners) owner-to-remove) ERR_NOT_OWNER)
+        (asserts! (is-in-list? owner-to-remove (var-get wallet-owners)) ERR_NOT_OWNER)
 
         ;; Remove the owner
         (let ((new-owners (filter (lambda (owner) (not (is-eq owner owner-to-remove))) (var-get wallet-owners))))
