@@ -9,7 +9,7 @@
 
 (define-data-var wallet-owners (list 10 principal) (list))
 (define-data-var required-approvals uint u2)
-(define-data-var transaction-records (map uint (tuple (transfer-amount uint) (recipient principal) (approvals (list 10 principal)) (is-executed bool))) (map))
+(define-data-var transaction-records (map uint (tuple (transfer-amount uint) (recipient principal) (approvals (list 10 principal)) (is-executed bool))) {})
 (define-data-var transaction-id-counter uint u0)
 
 ;; Helper function to check if a wallet owner is authorized
