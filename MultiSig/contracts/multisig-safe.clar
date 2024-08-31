@@ -14,13 +14,13 @@
 
 ;; Helper function to check if a wallet owner is authorized
 (define-read-only (is-authorized-owner (user principal))
-    (ok (is-some (index-of (var-get wallet-owners) user)))
+    (is-some (index-of (var-get wallet-owners) user))
 )
 
 ;; Function to add owners to the wallet
 (define-public (add-wallet-owner (new-owner principal))
     (begin
-        (asserts! (unwrap-panic (is-authorized-owner (tx-sender))) ERR_NOT_AUTHORIZED)
+        (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
         (asserts! (is-none (index-of (var-get wallet-owners) new-owner)) ERR_OWNER_ALREADY_EXISTS)
 
         ;; Update the list of owners
@@ -32,7 +32,7 @@
 ;; Function to submit a transaction
 (define-public (submit-wallet-transaction (recipient principal) (transfer-amount uint))
     (begin
-        (asserts! (unwrap-panic (is-authorized-owner (tx-sender))) ERR_NOT_AUTHORIZED)
+        (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
         (asserts! (> transfer-amount u0) ERR_INVALID_TRANSFER_AMOUNT)
 
         ;; Increment transaction counter and store the new transaction
@@ -57,21 +57,16 @@
         (match tx
             tx-none (err ERR_TRANSACTION_NOT_FOUND)
             tx-some (begin
-                (asserts! (unwrap-panic (is-authorized-owner (tx-sender))) ERR_NOT_AUTHORIZED)
+                (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
 
                 ;; Check if the transaction is already approved by the caller
-                (let ((approvals (get approvals tx)))
-                    (asserts! (is-none (index-of approvals (tx-sender))) ERR_ALREADY_APPROVED)
+                (let ((approvals (get approvals tx-some)))
+                    (asserts! (is-none (index-of approvals tx-sender)) ERR_ALREADY_APPROVED)
 
                     ;; Append the approval and update the transaction record
-                    (let ((new-approvals (append approvals (list (tx-sender)))))
+                    (let ((new-approvals (append approvals (list tx-sender))))
                         (map-set transaction-records tx-id
-                            (tuple
-                                (transfer-amount (get transfer-amount tx))
-                                (recipient (get recipient tx))
-                                (approvals new-approvals)
-                                (is-executed (get is-executed tx))
-                            )
+                            (merge tx-some { approvals: new-approvals })
                         )
                         (ok tx-id)
                     )
@@ -88,24 +83,21 @@
             tx-none (err ERR_TRANSACTION_NOT_FOUND)
             tx-some (begin
                 ;; Ensure the caller is an authorized owner
-                (asserts! (unwrap-panic (is-authorized-owner (tx-sender))) ERR_NOT_AUTHORIZED)
+                (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
 
                 ;; Ensure the transaction has enough approvals and is not already executed
-                (asserts! (>= (len (get approvals tx)) (var-get required-approvals)) ERR_INSUFFICIENT_APPROVALS)
-                (asserts! (not (get is-executed tx)) ERR_CANNOT_EXECUTE)
+                (asserts! (>= (len (get approvals tx-some)) (var-get required-approvals)) ERR_INSUFFICIENT_APPROVALS)
+                (asserts! (not (get is-executed tx-some)) ERR_CANNOT_EXECUTE)
 
                 ;; Execute the transaction
-                (let ((transfer-amount (get transfer-amount tx))
-                      (recipient (get recipient tx)))
-                    (map-set transaction-records tx-id
-                        (tuple
-                            (transfer-amount transfer-amount)
-                            (recipient recipient)
-                            (approvals (get approvals tx))
-                            (is-executed true)
-                        )
-                    )
+                (let (
+                    (transfer-amount (get transfer-amount tx-some))
+                    (recipient (get recipient tx-some))
+                )
                     (try! (as-contract (stx-transfer? transfer-amount tx-sender recipient)))
+                    (map-set transaction-records tx-id
+                        (merge tx-some { is-executed: true })
+                    )
                     (ok true)
                 )
             )
@@ -116,11 +108,11 @@
 ;; Function to remove a wallet owner
 (define-public (remove-wallet-owner (owner-to-remove principal))
     (begin
-        (asserts! (unwrap-panic (is-authorized-owner (tx-sender))) ERR_NOT_AUTHORIZED)
+        (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
         (asserts! (is-some (index-of (var-get wallet-owners) owner-to-remove)) ERR_NOT_OWNER)
 
         ;; Remove the owner
-        (let ((new-owners (filter not (map (lambda (owner) (is-eq owner owner-to-remove)) (var-get wallet-owners)))))
+        (let ((new-owners (filter (lambda (owner) (not (is-eq owner owner-to-remove))) (var-get wallet-owners))))
             (var-set wallet-owners new-owners)
             (ok owner-to-remove)
         )
