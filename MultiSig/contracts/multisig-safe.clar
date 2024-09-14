@@ -1,3 +1,6 @@
+;; Multisig Wallet Smart Contract
+
+;; Error codes
 (define-constant ERR_NOT_AUTHORIZED (err u100))
 (define-constant ERR_INSUFFICIENT_APPROVALS (err u101))
 (define-constant ERR_ALREADY_APPROVED (err u102))
@@ -7,13 +10,14 @@
 (define-constant ERR_NOT_OWNER (err u106))
 (define-constant ERR_CANNOT_EXECUTE (err u107))
 
+;; Data variables
 (define-data-var wallet-owners (list 10 principal) (list))
 (define-data-var required-approvals uint u2)
 (define-data-var transaction-records (map uint (tuple (transfer-amount uint) (recipient principal) (approvals (list 10 principal)) (is-executed bool))) {})
 (define-data-var transaction-id-counter uint u0)
 
 ;; Helper function to check if a wallet owner is authorized
-(define-private (is-authorized-owner (user principal))
+(define-read-only (is-authorized-owner (user principal))
     (is-some (index-of (var-get wallet-owners) user))
 )
 
@@ -22,7 +26,8 @@
     (begin
         (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
         (asserts! (is-none (index-of (var-get wallet-owners) new-owner)) ERR_OWNER_ALREADY_EXISTS)
-        (ok (var-set wallet-owners (append (var-get wallet-owners) (list new-owner))))
+        (var-set wallet-owners (append (var-get wallet-owners) (list new-owner)))
+        (ok new-owner)
     )
 )
 
@@ -93,13 +98,17 @@
     )
 )
 
-;; Function to remove a wallet owner
+;; Function to remove a wallet owner using filter
 (define-public (remove-wallet-owner (owner-to-remove principal))
-    (let ((is-authorized (is-authorized-owner tx-sender))
-          (owner-exists (is-some (index-of (var-get wallet-owners) owner-to-remove))))
-        (asserts! is-authorized ERR_NOT_AUTHORIZED)
-        (asserts! owner-exists ERR_NOT_OWNER)
-        (ok (var-set wallet-owners 
-            (filter (lambda (owner) (not (is-eq owner owner-to-remove))) (var-get wallet-owners))))
+    (begin
+        (asserts! (is-authorized-owner tx-sender) ERR_NOT_AUTHORIZED)
+        (asserts! (is-some (index-of (var-get wallet-owners) owner-to-remove)) ERR_NOT_OWNER)
+        ;; Filter the list to remove the specified owner
+        (let ((filtered-owners (filter
+                                 (lambda (owner) (not (is-eq owner owner-to-remove)))
+                                 (var-get wallet-owners))))
+            (var-set wallet-owners filtered-owners)
+            (ok filtered-owners)
+        )
     )
 )
